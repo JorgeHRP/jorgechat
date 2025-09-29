@@ -39,7 +39,7 @@ limiter = Limiter(
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # Máximo 5 MB por upload
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SECURE=False,   # altere para True em produção com HTTPS
+    SESSION_COOKIE_SECURE=True,   
     SESSION_COOKIE_SAMESITE="Lax"
 )
 
@@ -301,7 +301,7 @@ def grupos():
         resp.raise_for_status()
         grupos = resp.json() or []
     except Exception as e:
-        print("Erro ao buscar grupos:", e)
+        print("Erro ao buscar grupos")
 
     return render_template("grupos.html", grupos=grupos, instancia=instancia)
 
@@ -352,7 +352,7 @@ def enviar_grupos():
         resp.raise_for_status()
         flash("✅ Mensagem enviada com sucesso!")
     except Exception as e:
-        print("Erro ao enviar:", e)
+        print("Erro ao enviar")
         flash("❌ Erro ao enviar mensagem.")
 
     return redirect(url_for("grupos"))
@@ -422,7 +422,6 @@ def dispositivo():
     )
 
 @app.route("/dispositivo/status/<nome>")
-@limiter.limit("5 per minute")  # até 5 tentativas por minuto
 @ativacao_required
 def dispositivo_status(nome):
     state = evolution_status(nome)
@@ -442,6 +441,7 @@ def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' https://cdn.jsdelivr.net"
     return response
 
 if __name__ == "__main__":
