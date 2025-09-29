@@ -11,6 +11,8 @@ import json, logging, filetype
 from collections import defaultdict
 import time
 import re
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 # -----------------------------
 # Configuração inicial
@@ -27,6 +29,11 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret")
+limiter = Limiter(
+    key_func=get_remote_address,  # identifica por IP
+    app=app,                      # aplica no app Flask
+    default_limits=[]             # sem limite global, só onde você colocar
+)
 
 # Segurança extra
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # Máximo 5 MB por upload
@@ -173,7 +180,7 @@ def ativacao_required(f):
 # Rotas principais
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
-@rate_limit_login(limit=5, window=60)  # até 5 tentativas por minuto
+@limiter.limit("5 per minute")  # até 5 tentativas por minuto
 def login():
     if request.method == "POST":
         nome = request.form["nome"]
