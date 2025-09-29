@@ -7,7 +7,8 @@ from functools import wraps
 import base64
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
-import json, imghdr, logging
+import json, logging, filetype
+
 
 
 # -----------------------------
@@ -94,12 +95,13 @@ def safe_image_to_b64(file_storage, max_size=(1024, 1024)):
     if filename.endswith(".svg") or file_storage.mimetype == "image/svg+xml":
         raise ValueError("SVG não permitido")
 
-    # Verifica assinatura do arquivo
+    # Verifica assinatura mágica
     file_storage.stream.seek(0)
-    header = file_storage.stream.read(512)
-    kind = imghdr.what(None, h=header)
+    header = file_storage.stream.read(261)  # filetype precisa dos primeiros bytes
+    kind = filetype.guess(header)
     file_storage.stream.seek(0)
-    if kind not in {"png", "jpeg", "gif", "webp"}:
+
+    if not kind or kind.mime not in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
         raise ValueError("Tipo de imagem não suportado")
 
     try:
@@ -110,13 +112,13 @@ def safe_image_to_b64(file_storage, max_size=(1024, 1024)):
     except (UnidentifiedImageError, Exception):
         raise ValueError("Arquivo não é uma imagem válida")
 
-    # Re-encode limpa metadados e garante formato
     img = img.convert("RGB")
     img.thumbnail(max_size)
     buffer = BytesIO()
     img.save(buffer, format="PNG", optimize=True)
     buffer.seek(0)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
 
 
 # -----------------------------
