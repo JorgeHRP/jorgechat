@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+develop-eggs/
+.installed.cfg
+*.manifest
+*.spec
+
+# Virtualenv
+.env/
+.venv/
+venv/
+ENV/
+env/
+*.env
+
+# Environment and secrets
+.env
+*.key
+*.pem
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+*.sqlite3
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Cache
+*.cache
+.cache/
+pip-wheel-metadata/
+__pycache__/
+
+# Flask / Werkzeug
+instance/
+*.db
+
+# Jupyter / IPython (se usar notebooks de teste)
+.ipynb_checkpoints
+*.ipynb
+
+# Pillow / imagens temporárias
+*.png~
+*.jpg~
+*.jpeg~
+*.tmp
+
+# Test / coverage
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+
+
+app.py.old

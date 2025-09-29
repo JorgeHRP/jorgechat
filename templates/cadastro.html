@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Cadastro{% endblock %}
+{% block content %}
+<div class="login-wrapper">
+  <div class="login-col">
+    <div class="login-card">
+      <h3 class="text-center mb-4">Criar Conta</h3>
+
+      {% if erro %}
+        <div class="alert alert-danger text-center">{{ erro }}</div>
+      {% endif %}
+
+      <form method="post">
+        <div class="mb-3">
+          <label for="nome" class="form-label">Usuário</label>
+          <input type="text" class="form-control" id="nome" name="nome" required>
+        </div>
+        <div class="mb-3">
+          <label for="empresa" class="form-label">Empresa</label>
+          <input type="text" class="form-control" id="empresa" name="empresa" required>
+        </div>
+        <div class="mb-3">
+          <label for="telefone" class="form-label">Telefone</label>
+          <input type="text" class="form-control" id="telefone" name="telefone" required>
+        </div>
+        <div class="mb-3">
+          <label for="senha" class="form-label">Senha</label>
+          <input type="password" class="form-control" id="senha" name="senha" required>
+        </div>
+        <div class="mb-3">
+          <label for="confirmar" class="form-label">Confirmar Senha</label>
+          <input type="password" class="form-control" id="confirmar" name="confirmar" required>
+        </div>
+        <button type="submit" class="btn btn-gradient w-100">Registrar</button>
+      </form>
+
+      <div class="text-center mt-3">
+        <small>Já tem conta? <a href="{{ url_for('login') }}">Entrar</a></small>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

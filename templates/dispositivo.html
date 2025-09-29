@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Dispositivo{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+
+      <div class="card shadow-lg border-0">
+        <div class="card-body text-center">
+
+          <h3 class="mb-4">📱 Gerenciar Dispositivo</h3>
+
+          <!-- Status -->
+          {% if status %}
+          <div id="status-box"
+               class="alert {% if conectado %}alert-success{% elif expirado %}alert-warning{% else %}alert-info{% endif %}">
+            {{ status }}
+          </div>
+          {% endif %}
+
+          <!-- Instância conectada -->
+          {% if conectado and dispositivo_nome %}
+            <h5 class="mb-3">🔗 Instância ativa: <b>{{ dispositivo_nome }}</b></h5>
+            <form method="POST">
+              <input type="hidden" name="acao" value="deletar">
+              <button type="submit" class="btn btn-danger btn-lg">🗑️ Deletar Instância</button>
+            </form>
+
+          <!-- Criar nova instância -->
+          {% elif not dispositivo_nome %}
+            <form method="POST" class="mt-3">
+              <div class="input-group mb-3">
+                <input type="text" class="form-control" name="nome" placeholder="Nome da instância" required>
+                <input type="hidden" name="acao" value="criar">
+                <button type="submit" class="btn btn-primary">Criar</button>
+              </div>
+            </form>
+          {% endif %}
+
+          <!-- QR Code -->
+          {% if qrcode_b64 %}
+            <div class="mt-4" id="qrcode-box">
+              <h5>Escaneie o QR Code abaixo no WhatsApp:</h5>
+              <img src="{{ qrcode_b64 }}" alt="QR Code" class="img-fluid mt-3" style="max-width: 300px;">
+            </div>
+          {% endif %}
+
+          <!-- Pairing code -->
+          {% if pairing_code %}
+            <div class="mt-4">
+              <h5>Código de Pareamento:</h5>
+              <p class="fw-bold fs-4">{{ pairing_code }}</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if qrcode_b64 and dispositivo_nome %}
+<script>
+  // Polling para verificar status da instância
+  let tentativas = 0;
+  const maxTentativas = 12; // ~1 minuto
+  const nomeInstancia = "{{ dispositivo_nome }}";
+
+  function checarStatus() {
+    fetch(`/dispositivo/status/${nomeInstancia}`)
+      .then(res => res.json())
+      .then(data => {
+        const statusBox = document.getElementById("status-box");
+        const cardBody = document.querySelector(".card-body");
+
+        if (data.status === "open") {
+          // Atualiza mensagem
+          statusBox.className = "alert alert-success";
+          statusBox.innerText = `✅ Dispositivo ${nomeInstancia} conectado!`;
+
+          // Troca conteúdo do card
+          cardBody.innerHTML = `
+            <h3 class="mb-4">📱 Gerenciar Dispositivo</h3>
+            <div class="alert alert-success">✅ Dispositivo ${nomeInstancia} conectado!</div>
+            <h5 class="mb-3">🔗 Instância ativa: <b>${nomeInstancia}</b></h5>
+            <form method="POST">
+              <input type="hidden" name="acao" value="deletar">
+              <button type="submit" class="btn btn-danger btn-lg">🗑️ Deletar Instância</button>
+            </form>
+          `;
+          return; // para polling
+        }
+
+        tentativas++;
+        if (tentativas < maxTentativas) {
+          setTimeout(checarStatus, 5000);
+        } else {
+          statusBox.className = "alert alert-warning";
+          statusBox.innerText = "⏱️ QR Code expirado. Gere novamente.";
+        }
+      })
+      .catch(err => console.error("Erro ao checar status:", err));
+  }
+
+  setTimeout(checarStatus, 5000);
+</script>
+{% endif %}
+{% endblock %}

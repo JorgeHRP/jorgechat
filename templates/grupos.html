@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Grupos{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="mt-3">
+        {% for msg in messages %}
+          <div class="alert alert-info alert-dismissible fade show" role="alert">
+            {{ msg }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="row justify-content-center">
+    <div class="col-md-10">
+
+      <div class="card shadow-lg border-0">
+        <div class="card-body">
+
+          <h3 class="mb-4 text-center">👥 Selecionar Grupos</h3>
+
+          <!-- Busca -->
+          <input type="text" id="search" class="form-control mb-3" placeholder="🔍 Procurar grupo...">
+
+          <!-- Lista de grupos -->
+          <div id="group-list" class="list-group" style="max-height: 400px; overflow-y: auto;">
+            {% for g in grupos %}
+              <label class="list-group-item d-flex align-items-center">
+                <input type="checkbox" class="form-check-input me-2 group-check" value="{{ g.id }}">
+                <img src="{{ g.pictureUrl or '/static/no-group.png' }}" alt="Foto" 
+                     class="rounded me-2" style="width:40px;height:40px;object-fit:cover;">
+                <div>
+                  <strong>{{ g.subject }}</strong><br>
+                  <small>{{ g.size }} membros</small>
+                </div>
+              </label>
+            {% endfor %}
+          </div>
+
+          <!-- Botão marcar todos -->
+          <div class="mt-3 text-center">
+            <button type="button" id="toggle-all" class="btn btn-outline-primary" disabled>
+              ✅ Marcar Todos
+            </button>
+          </div>
+
+          <hr>
+
+          <!-- Campo de mensagem -->
+          <form method="POST" action="{{ url_for('enviar_grupos') }}" 
+                enctype="multipart/form-data" id="send-form">
+            <input type="hidden" name="grupos" id="selected-groups">
+            <input type="hidden" name="enviarTodos" id="send-to-all" value="False">
+
+            <div class="mb-3">
+              <label class="form-label">Mensagem:</label>
+              <textarea name="mensagem" class="form-control" rows="4" required></textarea>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">Imagem (opcional):</label>
+              <input type="file" name="imagem" class="form-control" accept="image/*">
+            </div>
+
+            <div class="text-center">
+              <button type="submit" class="btn btn-success btn-lg">📤 Enviar</button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  const search = document.getElementById("search");
+  const groupList = document.getElementById("group-list");
+  const toggleAllBtn = document.getElementById("toggle-all");
+  const selectedGroupsInput = document.getElementById("selected-groups");
+  const sendToAllInput = document.getElementById("send-to-all");
+
+  // Filtro de grupos
+  search.addEventListener("keyup", () => {
+    const term = search.value.toLowerCase();
+    document.querySelectorAll("#group-list .list-group-item").forEach(item => {
+      item.style.display = item.innerText.toLowerCase().includes(term) ? "" : "none";
+    });
+  });
+
+  // Habilitar botão "Marcar Todos" apenas quando 1 grupo selecionado
+  function checkSelection() {
+    const selected = document.querySelectorAll(".group-check:checked");
+    toggleAllBtn.disabled = (selected.length !== 1);
+  }
+
+  document.querySelectorAll(".group-check").forEach(chk => {
+    chk.addEventListener("change", checkSelection);
+  });
+
+  // Toggle marcar todos
+  toggleAllBtn.addEventListener("click", () => {
+    const val = sendToAllInput.value === "True" ? "False" : "True";
+    sendToAllInput.value = val;
+    toggleAllBtn.innerText = val === "True" ? "🚫 Desmarcar Todos" : "✅ Marcar Todos";
+  });
+
+  // Antes de enviar form → salvar grupos selecionados
+  document.getElementById("send-form").addEventListener("submit", (e) => {
+    const selected = Array.from(document.querySelectorAll(".group-check:checked")).map(chk => chk.value);
+    selectedGroupsInput.value = JSON.stringify(selected);
+    if (selected.length === 0) {
+      e.preventDefault();
+      alert("Selecione pelo menos 1 grupo!");
+    }
+  });
+</script>
+{% endblock %}
