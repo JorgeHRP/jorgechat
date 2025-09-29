@@ -60,7 +60,7 @@
 </div>
 
 {% if qrcode_b64 and dispositivo_nome %}
-<script>
+<script nonce="{{ g.csp_nonce }}">
   // Polling para verificar status da instância
   let tentativas = 0;
   const maxTentativas = 12; // ~1 minuto

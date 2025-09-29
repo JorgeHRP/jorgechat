@@ -37,8 +37,8 @@
                 <img src="{{ g.pictureUrl or '/static/no-group.png' }}" alt="Foto" 
                      class="rounded me-2" style="width:40px;height:40px;object-fit:cover;">
                 <div>
-                  <strong>{{ g.subject }}</strong><br>
-                  <small>{{ g.size }} membros</small>
+                  <strong class="group-name">{{ g.subject }}</strong><br>
+                  <small class="group-size">{{ g.size }} membros</small>
                 </div>
               </label>
             {% endfor %}
@@ -81,18 +81,22 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ g.csp_nonce }}">
   const search = document.getElementById("search");
-  const groupList = document.getElementById("group-list");
   const toggleAllBtn = document.getElementById("toggle-all");
   const selectedGroupsInput = document.getElementById("selected-groups");
   const sendToAllInput = document.getElementById("send-to-all");
 
-  // Filtro de grupos
-  search.addEventListener("keyup", () => {
-    const term = search.value.toLowerCase();
+  // 🔍 Filtro de grupos (usando somente o nome do grupo)
+  search.addEventListener("input", () => {
+    const term = search.value.toLowerCase().trim();
     document.querySelectorAll("#group-list .list-group-item").forEach(item => {
-      item.style.display = item.innerText.toLowerCase().includes(term) ? "" : "none";
+      const name = (item.querySelector(".group-name")?.textContent || "").toLowerCase().trim();
+      if (name.includes(term)) {
+        item.classList.remove("d-none");  // mostra
+      } else {
+        item.classList.add("d-none");     // esconde
+      }
     });
   });
 
@@ -113,13 +117,22 @@
     toggleAllBtn.innerText = val === "True" ? "🚫 Desmarcar Todos" : "✅ Marcar Todos";
   });
 
-  // Antes de enviar form → salvar grupos selecionados
+  // Antes de enviar form → salvar grupos selecionados e travar botão
   document.getElementById("send-form").addEventListener("submit", (e) => {
     const selected = Array.from(document.querySelectorAll(".group-check:checked")).map(chk => chk.value);
     selectedGroupsInput.value = JSON.stringify(selected);
+
     if (selected.length === 0) {
       e.preventDefault();
       alert("Selecione pelo menos 1 grupo!");
+      return;
+    }
+
+    // Desabilita botão para evitar duplo clique
+    const submitBtn = e.target.querySelector("button[type='submit']");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerText = "⏳ Enviando...";
     }
   });
 </script>

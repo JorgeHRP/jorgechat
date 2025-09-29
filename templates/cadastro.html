@@ -6,31 +6,57 @@
     <div class="login-card">
       <h3 class="text-center mb-4">Criar Conta</h3>
 
+      {# --- Erros passados direto (erro="...") --- #}
       {% if erro %}
         <div class="alert alert-danger text-center">{{ erro }}</div>
       {% endif %}
 
-      <form method="post">
+      {# --- Mensagens via flash() --- #}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, msg in messages %}
+            <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} text-center">
+              {{ msg }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="post" novalidate>
         <div class="mb-3">
           <label for="nome" class="form-label">Usuário</label>
-          <input type="text" class="form-control" id="nome" name="nome" required>
+          <input type="text" class="form-control" id="nome" name="nome"
+                 required pattern="^[A-Za-z0-9_]{3,20}$">
+          <div class="form-text">3–20 caracteres, apenas letras e numeros</div>
         </div>
+
         <div class="mb-3">
           <label for="empresa" class="form-label">Empresa</label>
-          <input type="text" class="form-control" id="empresa" name="empresa" required>
+          <input type="text" class="form-control" id="empresa" name="empresa"
+                 required pattern="^[A-Za-z0-9 ]{1,20}$">
+          <div class="form-text">Até 20 caracteres, sem símbolos especiais</div>
         </div>
+
         <div class="mb-3">
           <label for="telefone" class="form-label">Telefone</label>
-          <input type="text" class="form-control" id="telefone" name="telefone" required>
+          <input type="text" class="form-control" id="telefone" name="telefone"
+                 required pattern="^[0-9]{8,15}$">
+          <div class="form-text">Apenas números, entre 8 e 15 dígitos</div>
         </div>
+
         <div class="mb-3">
           <label for="senha" class="form-label">Senha</label>
-          <input type="password" class="form-control" id="senha" name="senha" required>
+          <input type="password" class="form-control" id="senha" name="senha"
+                 required minlength="8" maxlength="20">
+          <div class="form-text">8–20 caracteres, ao menos 1 número e 1 letra maiúscula</div>
         </div>
+
         <div class="mb-3">
           <label for="confirmar" class="form-label">Confirmar Senha</label>
           <input type="password" class="form-control" id="confirmar" name="confirmar" required>
+          <div class="form-text">Repita a senha exatamente</div>
         </div>
+
         <button type="submit" class="btn btn-gradient w-100">Registrar</button>
       </form>
 

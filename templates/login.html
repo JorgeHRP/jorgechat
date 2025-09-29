@@ -6,12 +6,16 @@
     <div class="login-card">
       <h3 class="text-center mb-4">Acessar Sistema</h3>
 
-      {% if erro %}
-        <div class="alert alert-danger text-center">{{ erro }}</div>
-      {% endif %}
-      {% if sucesso %}
-        <div class="alert alert-success text-center">{{ sucesso }}</div>
-      {% endif %}
+      {# --- Mensagens flash (erro ou sucesso) --- #}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, msg in messages %}
+            <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} text-center">
+              {{ msg }}
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
 
       <form method="post">
         <div class="mb-3">

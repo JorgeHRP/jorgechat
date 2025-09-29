@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session, flash, g
 from supabase import create_client
 from dotenv import load_dotenv
 import os, bcrypt, requests
@@ -7,12 +7,13 @@ from functools import wraps
 import base64
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
-import json, logging, filetype
-from collections import defaultdict
-import time
-import re
+import json, logging
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+import secrets
+import re
+import filetype
+
 
 # -----------------------------
 # Configuração inicial
@@ -29,19 +30,25 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret")
+
+# ✅ Rate limiting
 limiter = Limiter(
     key_func=get_remote_address,  # identifica por IP
-    app=app,                      # aplica no app Flask
-    default_limits=[]             # sem limite global, só onde você colocar
+    app=app,                      # aplica no Flask
+    default_limits=[]              # sem limite global (apenas onde você especificar)
 )
 
 # Segurança extra
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # Máximo 5 MB por upload
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SECURE=True,   
+    SESSION_COOKIE_SECURE=True,   # altere para True em produção com HTTPS
     SESSION_COOKIE_SAMESITE="Lax"
 )
+
+@app.before_request
+def set_nonce():
+    g.csp_nonce = secrets.token_hex(16)
 
 # -----------------------------
 # Helpers
@@ -54,6 +61,85 @@ def parse_date_br(date_str: str):
     except ValueError:
         return None
 
+
+def tem_acesso_total_por_expiracao(data_exp_str: str) -> bool:
+    d = parse_date_br(data_exp_str)
+    if not d:
+        return False
+    return datetime.now().date() <= d
+
+
+def evolution_status(instance_name: str) -> str:
+    url = f"{EVOLUTION_SERVER}/instance/connect/{instance_name}"
+    headers = {"apikey": EVOLUTION_APIKEY}
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json() or {}
+        return data.get("instance", {}).get("state") or data.get("instance", {}).get("status")
+    except Exception:
+        return None
+
+
+def evolution_create_instance(nome: str) -> dict:
+    url = f"{EVOLUTION_SERVER}/instance/create"
+    headers = {"apikey": EVOLUTION_APIKEY, "Content-Type": "application/json"}
+    payload = {"instanceName": nome, "integration": "WHATSAPP-BAILEYS", "qrcode": True}
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=15)
+        resp.raise_for_status()
+        return resp.json() or {}
+    except Exception:
+        return {}
+
+
+def evolution_delete_instance(nome: str) -> bool:
+    url = f"{EVOLUTION_SERVER}/instance/delete/{nome}"
+    headers = {"apikey": EVOLUTION_APIKEY}
+    try:
+        resp = requests.delete(url, headers=headers, timeout=10)
+        resp.raise_for_status()
+        return True
+    except Exception:
+        return False
+
+
+def safe_image_to_b64(file_storage, max_size=(1024, 1024)):
+    """Valida e converte imagem para base64 com segurança"""
+    filename = (file_storage.filename or "").lower()
+    if filename.endswith(".svg") or file_storage.mimetype == "image/svg+xml":
+        raise ValueError("SVG não permitido")
+
+    # Verifica assinatura do arquivo (magic bytes)
+    file_storage.stream.seek(0)
+    header = file_storage.stream.read(261)  # suficiente p/ filetype
+    kind = filetype.guess(header)
+    file_storage.stream.seek(0)
+
+    if not kind or kind.mime not in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
+        raise ValueError("Tipo de imagem não suportado")
+
+    try:
+        img = Image.open(file_storage)
+        img.verify()  # checa corrupção
+        file_storage.stream.seek(0)
+        img = Image.open(file_storage)
+    except (UnidentifiedImageError, Exception):
+        raise ValueError("Arquivo não é uma imagem válida")
+
+    # Re-encode: limpa metadados e força formato seguro
+    img = img.convert("RGB")
+    img.thumbnail(max_size)
+    buffer = BytesIO()
+    img.save(buffer, format="PNG", optimize=True)
+    buffer.seek(0)
+
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+
+# -----------------------------
+# Validadores
+# -----------------------------
 def validar_nome(nome: str) -> bool:
     # Apenas letras, números e _, entre 3 e 20 caracteres
     return bool(nome and re.match(r"^[A-Za-z0-9_]{3,20}$", nome))
@@ -68,7 +154,7 @@ def validar_telefone(telefone: str) -> bool:
 
 def validar_senha(senha: str) -> bool:
     # Entre 8 e 128 caracteres, deve ter ao menos 1 número e 1 letra maiúscula
-    if not senha or len(senha) < 8 or len(senha) > 128:
+    if not senha or len(senha) < 8 or len(senha) > 20:
         return False
     if not re.search(r"\d", senha):
         return False
@@ -76,100 +162,6 @@ def validar_senha(senha: str) -> bool:
         return False
     return True
 
-
-def tem_acesso_total_por_expiracao(data_exp_str: str) -> bool:
-    d = parse_date_br(data_exp_str)
-    if not d:
-        return False
-    return datetime.now().date() <= d
-
-def evolution_status(instance_name: str) -> str:
-    url = f"{EVOLUTION_SERVER}/instance/connect/{instance_name}"
-    headers = {"apikey": EVOLUTION_APIKEY}
-    try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        data = resp.json() or {}
-        return data.get("instance", {}).get("state") or data.get("instance", {}).get("status")
-    except Exception:
-        return None
-
-def evolution_create_instance(nome: str) -> dict:
-    url = f"{EVOLUTION_SERVER}/instance/create"
-    headers = {"apikey": EVOLUTION_APIKEY, "Content-Type": "application/json"}
-    payload = {"instanceName": nome, "integration": "WHATSAPP-BAILEYS", "qrcode": True}
-    try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=15)
-        resp.raise_for_status()
-        return resp.json() or {}
-    except Exception:
-        return {}
-
-def evolution_delete_instance(nome: str) -> bool:
-    url = f"{EVOLUTION_SERVER}/instance/delete/{nome}"
-    headers = {"apikey": EVOLUTION_APIKEY}
-    try:
-        resp = requests.delete(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-        return True
-    except Exception:
-        return False
-
-def safe_image_to_b64(file_storage, max_size=(1024, 1024)):
-    """Valida e converte imagem para base64 com segurança"""
-    filename = (file_storage.filename or "").lower()
-    if filename.endswith(".svg") or file_storage.mimetype == "image/svg+xml":
-        raise ValueError("SVG não permitido")
-
-    # Verifica assinatura mágica
-    file_storage.stream.seek(0)
-    header = file_storage.stream.read(261)  # filetype precisa dos primeiros bytes
-    kind = filetype.guess(header)
-    file_storage.stream.seek(0)
-
-    if not kind or kind.mime not in {"image/png", "image/jpeg", "image/gif", "image/webp"}:
-        raise ValueError("Tipo de imagem não suportado")
-
-    try:
-        img = Image.open(file_storage)
-        img.verify()
-        file_storage.stream.seek(0)
-        img = Image.open(file_storage)
-    except (UnidentifiedImageError, Exception):
-        raise ValueError("Arquivo não é uma imagem válida")
-
-    img = img.convert("RGB")
-    img.thumbnail(max_size)
-    buffer = BytesIO()
-    img.save(buffer, format="PNG", optimize=True)
-    buffer.seek(0)
-    return base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-# -----------------------------
-# Segurança extra: Rate Limit
-# -----------------------------
-login_attempts = defaultdict(list)
-
-def rate_limit_login(limit=5, window=60):
-    """Limita X tentativas de login por IP dentro da janela (segundos)."""
-    def decorator(f):
-        @wraps(f)
-        def wrapped(*args, **kwargs):
-            ip = request.remote_addr
-            now = time.time()
-
-            # mantém só tentativas dentro da janela
-            login_attempts[ip] = [t for t in login_attempts[ip] if now - t < window]
-
-            if len(login_attempts[ip]) >= limit:
-                return render_template("login.html", erro="Muitas tentativas. Aguarde 1 minuto.")
-
-            resp = f(*args, **kwargs)
-            if request.method == "POST":
-                login_attempts[ip].append(now)
-            return resp
-        return wrapped
-    return decorator
 # -----------------------------
 # Decorators
 # -----------------------------
@@ -181,6 +173,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return _wrap
 
+
 def ativacao_required(f):
     @wraps(f)
     def _wrap(*args, **kwargs):
@@ -191,11 +184,12 @@ def ativacao_required(f):
         return f(*args, **kwargs)
     return _wrap
 
+
 # -----------------------------
 # Rotas principais
 # -----------------------------
 @app.route("/", methods=["GET", "POST"])
-@limiter.limit("5 per minute")  # até 5 tentativas por minuto
+@limiter.limit("5 per minute")
 def login():
     if request.method == "POST":
         nome = request.form["nome"]
@@ -224,63 +218,72 @@ def login():
     return render_template("login.html")
 
 @app.route("/cadastro", methods=["GET", "POST"])
-@limiter.limit("5 per minute")  # até 5 tentativas por minuto
+@limiter.limit("5 per minute")
 def cadastro():
     if request.method == "POST":
-        nome = (request.form.get("nome") or "").strip()
-        senha = request.form.get("senha") or ""
-        confirmar = request.form.get("confirmar") or ""
-        empresa = (request.form.get("empresa") or "").strip()
-        telefone = (request.form.get("telefone") or "").strip()
+        try:
+            nome = (request.form.get("nome") or "").strip()
+            senha = request.form.get("senha") or ""
+            confirmar = request.form.get("confirmar") or ""
+            empresa = (request.form.get("empresa") or "").strip()
+            telefone = (request.form.get("telefone") or "").strip()
 
-        # Validações
-        if not validar_nome(nome):
-            return render_template("cadastro.html", erro="Nome inválido. Use apenas letras/números (3-20 caracteres).")
 
-        if not validar_empresa(empresa):
-            return render_template("cadastro.html", erro="Empresa inválida. Use apenas letras/números/espaço (máx. 20).")
+            # 🔒 Validações
+            if not validar_nome(nome):
+                raise ValueError("Nome inválido")
+            if not validar_empresa(empresa):
+                raise ValueError("Empresa inválida")
+            if not validar_telefone(telefone):
+                raise ValueError("Telefone inválido")
+            if senha != confirmar:
+                raise ValueError("As senhas não coincidem")
+            if not validar_senha(senha):
+                raise ValueError("Senha fraca")
 
-        if not validar_telefone(telefone):
-            return render_template("cadastro.html", erro="Telefone inválido. Use apenas números (8-15 dígitos).")
+            # Evita duplicados
+            existe = supabase.table(SUPABASE_TABLE).select("id").eq("nome", nome).execute()
+            if existe.data:
+                raise ValueError("Usuário já existe")
 
-        if senha != confirmar:
-            return render_template("cadastro.html", erro="As senhas não coincidem.")
+            # Hash da senha
+            senha_hash = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
 
-        if not validar_senha(senha):
-            return render_template("cadastro.html", erro="Senha fraca. Use no mínimo 8 caracteres, com número e letra maiúscula.")
+            # Insert
+            supabase.table(SUPABASE_TABLE).insert({
+                "nome": nome,
+                "senha": senha_hash,
+                "empresa": empresa,
+                "telefone": telefone
+            }).execute()
 
-        # Evita cadastro duplicado
-        existe = supabase.table(SUPABASE_TABLE).select("id").eq("nome", nome).execute()
-        if existe.data:
-            return render_template("cadastro.html", erro="Usuário já existe.")
+            flash("Cadastro realizado com sucesso!", "success")
+            return redirect(url_for("login"))
 
-        # Hash seguro
-        senha_hash = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
 
-        # Inserção no Supabase
-        supabase.table(SUPABASE_TABLE).insert({
-            "nome": nome,
-            "senha": senha_hash,
-            "empresa": empresa,
-            "telefone": telefone
-        }).execute()
-
-        return render_template("login.html", sucesso="Cadastro realizado! Faça login.")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            flash(f"Erro: {e}", "danger")
+            return redirect(url_for("cadastro"))
 
     return render_template("cadastro.html")
+
+
 
 @app.route("/perfil")
 @login_required
 def perfil():
     return render_template("perfil.html", usuario=session["usuario"])
 
+
 @app.route("/home")
 @login_required
 def home():
     return render_template("home.html", acesso_total=session.get("acesso_total", False))
 
+
 @app.route("/grupos", methods=["GET"])
-@limiter.limit("5 per minute")  # até 5 tentativas por minuto
 @ativacao_required
 def grupos():
     usuario = session["usuario"]
@@ -301,12 +304,12 @@ def grupos():
         resp.raise_for_status()
         grupos = resp.json() or []
     except Exception as e:
-        print("Erro ao buscar grupos")
+        pass
 
     return render_template("grupos.html", grupos=grupos, instancia=instancia)
 
+
 @app.route("/grupos/enviar", methods=["POST"])
-@limiter.limit("5 per minute")  # até 5 tentativas por minuto
 @ativacao_required
 def enviar_grupos():
     usuario = session["usuario"]
@@ -352,15 +355,16 @@ def enviar_grupos():
         resp.raise_for_status()
         flash("✅ Mensagem enviada com sucesso!")
     except Exception as e:
-        print("Erro ao enviar")
         flash("❌ Erro ao enviar mensagem.")
 
     return redirect(url_for("grupos"))
+
 
 @app.route("/planos")
 @ativacao_required
 def planos():
     return render_template("planos.html")
+
 
 @app.route("/dispositivo", methods=["GET", "POST"])
 @ativacao_required
@@ -421,6 +425,7 @@ def dispositivo():
         dispositivo_nome=dispositivo_nome
     )
 
+
 @app.route("/dispositivo/status/<nome>")
 @ativacao_required
 def dispositivo_status(nome):
@@ -430,19 +435,36 @@ def dispositivo_status(nome):
         supabase.table(SUPABASE_TABLE).update({"dispositivo": nome}).eq("nome", usuario).execute()
     return {"status": state or "unknown"}
 
+
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
 # Segurança extra: headers
 @app.after_request
 def set_security_headers(response):
+    nonce = getattr(g, "csp_nonce", "")
+
+    script_src_parts = ["'self'", "https://cdn.jsdelivr.net"]
+    if nonce:
+        script_src_parts.insert(0, f"'nonce-{nonce}'")
+
+    csp = (
+        "default-src 'self'; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline' https:; "
+        f"script-src {' '.join(script_src_parts)}; "
+        "form-action 'self'; "  # ✅ libera envio do form
+    )
+
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer-when-downgrade"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https:; script-src 'self' https://cdn.jsdelivr.net"
+    response.headers["Content-Security-Policy"] = csp
     return response
+
 
 if __name__ == "__main__":
     app.run(debug=False)
