@@ -54,6 +54,29 @@ def parse_date_br(date_str: str):
     except ValueError:
         return None
 
+def validar_nome(nome: str) -> bool:
+    # Apenas letras, números e _, entre 3 e 20 caracteres
+    return bool(nome and re.match(r"^[A-Za-z0-9_]{3,20}$", nome))
+
+def validar_empresa(empresa: str) -> bool:
+    # Apenas letras, números e espaço, até 20 caracteres
+    return bool(empresa and re.match(r"^[A-Za-z0-9 ]{1,20}$", empresa))
+
+def validar_telefone(telefone: str) -> bool:
+    # Apenas dígitos, de 8 a 15 caracteres
+    return bool(telefone and re.match(r"^[0-9]{8,15}$", telefone))
+
+def validar_senha(senha: str) -> bool:
+    # Entre 8 e 128 caracteres, deve ter ao menos 1 número e 1 letra maiúscula
+    if not senha or len(senha) < 8 or len(senha) > 128:
+        return False
+    if not re.search(r"\d", senha):
+        return False
+    if not re.search(r"[A-Z]", senha):
+        return False
+    return True
+
+
 def tem_acesso_total_por_expiracao(data_exp_str: str) -> bool:
     d = parse_date_br(data_exp_str)
     if not d:
@@ -147,14 +170,6 @@ def rate_limit_login(limit=5, window=60):
             return resp
         return wrapped
     return decorator
-
-# -----------------------------
-# Segurança extra: Validação cadastro
-# -----------------------------
-def validar_nome(nome: str) -> bool:
-    # Apenas letras, números e _, entre 3 e 20 caracteres
-    return bool(re.match(r"^[A-Za-z0-9_]{3,20}$", nome))
-
 # -----------------------------
 # Decorators
 # -----------------------------
@@ -209,29 +224,45 @@ def login():
     return render_template("login.html")
 
 @app.route("/cadastro", methods=["GET", "POST"])
+@limiter.limit("5 per minute")  # até 5 tentativas por minuto
 def cadastro():
     if request.method == "POST":
-        nome = request.form["nome"]
-        senha = request.form["senha"]
-        confirmar = request.form["confirmar"]
-        empresa = request.form["empresa"]
-        telefone = request.form["telefone"]
+        nome = (request.form.get("nome") or "").strip()
+        senha = request.form.get("senha") or ""
+        confirmar = request.form.get("confirmar") or ""
+        empresa = (request.form.get("empresa") or "").strip()
+        telefone = (request.form.get("telefone") or "").strip()
 
+        # Validações
         if not validar_nome(nome):
             return render_template("cadastro.html", erro="Nome inválido. Use apenas letras/números (3-20 caracteres).")
+
+        if not validar_empresa(empresa):
+            return render_template("cadastro.html", erro="Empresa inválida. Use apenas letras/números/espaço (máx. 20).")
+
+        if not validar_telefone(telefone):
+            return render_template("cadastro.html", erro="Telefone inválido. Use apenas números (8-15 dígitos).")
 
         if senha != confirmar:
             return render_template("cadastro.html", erro="As senhas não coincidem.")
 
+        if not validar_senha(senha):
+            return render_template("cadastro.html", erro="Senha fraca. Use no mínimo 8 caracteres, com número e letra maiúscula.")
+
+        # Evita cadastro duplicado
         existe = supabase.table(SUPABASE_TABLE).select("id").eq("nome", nome).execute()
         if existe.data:
             return render_template("cadastro.html", erro="Usuário já existe.")
 
+        # Hash seguro
         senha_hash = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
 
+        # Inserção no Supabase
         supabase.table(SUPABASE_TABLE).insert({
-            "nome": nome, "senha": senha_hash,
-            "empresa": empresa, "telefone": telefone
+            "nome": nome,
+            "senha": senha_hash,
+            "empresa": empresa,
+            "telefone": telefone
         }).execute()
 
         return render_template("login.html", sucesso="Cadastro realizado! Faça login.")
@@ -249,6 +280,7 @@ def home():
     return render_template("home.html", acesso_total=session.get("acesso_total", False))
 
 @app.route("/grupos", methods=["GET"])
+@limiter.limit("5 per minute")  # até 5 tentativas por minuto
 @ativacao_required
 def grupos():
     usuario = session["usuario"]
@@ -274,6 +306,7 @@ def grupos():
     return render_template("grupos.html", grupos=grupos, instancia=instancia)
 
 @app.route("/grupos/enviar", methods=["POST"])
+@limiter.limit("5 per minute")  # até 5 tentativas por minuto
 @ativacao_required
 def enviar_grupos():
     usuario = session["usuario"]
@@ -389,6 +422,7 @@ def dispositivo():
     )
 
 @app.route("/dispositivo/status/<nome>")
+@limiter.limit("5 per minute")  # até 5 tentativas por minuto
 @ativacao_required
 def dispositivo_status(nome):
     state = evolution_status(nome)
