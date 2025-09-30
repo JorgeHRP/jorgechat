@@ -286,27 +286,36 @@ def home():
 @app.route("/grupos", methods=["GET"])
 @ativacao_required
 def grupos():
+    return render_template("grupos.html")
+
+# API que devolve os grupos em JSON
+@app.route("/api/grupos", methods=["GET"])
+@ativacao_required
+def api_grupos():
     usuario = session["usuario"]
 
     result = supabase.table(SUPABASE_TABLE).select("dispositivo").eq("nome", usuario).execute()
-    instancia = result.data[0].get("dispositivo") if result.data else None
+    instancia = result.data[0].get("dispositivo") if (result.data and len(result.data) > 0) else None
 
     if not instancia:
-        flash("❌ Nenhuma instância conectada.")
-        return redirect(url_for("dispositivo"))
+        return {"error": "Nenhuma instância conectada."}, 400
 
     url = f"{EVOLUTION_SERVER}/group/fetchAllGroups/{instancia}?getParticipants=false"
     headers = {"apikey": EVOLUTION_APIKEY}
 
-    grupos = []
     try:
-        resp = requests.get(url, headers=headers, timeout=300)
+        resp = requests.get(url, headers=headers, timeout=60)
         resp.raise_for_status()
         grupos = resp.json() or []
+        if not isinstance(grupos, list):
+            grupos = []
+        return {"grupos": grupos}
+    except requests.exceptions.Timeout:
+        return {"error": "Servidor demorou para responder."}, 504
     except Exception as e:
-        pass
+        logging.error(f"Erro ao buscar grupos: {e}", exc_info=True)
+        return {"error": "Erro inesperado ao buscar grupos."}, 500
 
-    return render_template("grupos.html", grupos=grupos, instancia=instancia)
 
 
 @app.route("/grupos/enviar", methods=["POST"])

@@ -31,17 +31,9 @@
 
           <!-- Lista de grupos -->
           <div id="group-list" class="list-group" style="max-height: 400px; overflow-y: auto;">
-            {% for g in grupos %}
-              <label class="list-group-item d-flex align-items-center">
-                <input type="checkbox" class="form-check-input me-2 group-check" value="{{ g.id }}">
-                <img src="{{ g.pictureUrl or '/static/no-group.png' }}" alt="Foto" 
-                     class="rounded me-2" style="width:40px;height:40px;object-fit:cover;">
-                <div>
-                  <strong class="group-name">{{ g.subject }}</strong><br>
-                  <small class="group-size">{{ g.size }} membros</small>
-                </div>
-              </label>
-            {% endfor %}
+            <div class="text-center py-3 text-muted" id="loading-msg">
+              ⏳ Carregando grupos, pode demorar alguns minutos...
+            </div>
           </div>
 
           <!-- Botão marcar todos -->
@@ -86,17 +78,50 @@
   const toggleAllBtn = document.getElementById("toggle-all");
   const selectedGroupsInput = document.getElementById("selected-groups");
   const sendToAllInput = document.getElementById("send-to-all");
+  const groupList = document.getElementById("group-list");
+  const loadingMsg = document.getElementById("loading-msg");
 
-  // 🔍 Filtro de grupos (usando somente o nome do grupo)
+  // 🔄 Função para carregar grupos via API
+  async function carregarGrupos() {
+    try {
+      const resp = await fetch("{{ url_for('api_grupos') }}");
+      const data = await resp.json();
+
+      if (!resp.ok) throw new Error(data.error || "Erro ao carregar grupos");
+
+      groupList.innerHTML = ""; // limpa o "carregando"
+      data.grupos.forEach(g => {
+        const item = document.createElement("label");
+        item.className = "list-group-item d-flex align-items-center";
+
+        item.innerHTML = `
+          <input type="checkbox" class="form-check-input me-2 group-check" value="${g.id}">
+          <img src="${g.pictureUrl || '/static/no-group.png'}" alt="Foto" 
+               class="rounded me-2" style="width:40px;height:40px;object-fit:cover;">
+          <div>
+            <strong class="group-name">${g.subject || "Sem nome"}</strong><br>
+            <small class="group-size">${g.size || 0} membros</small>
+          </div>
+        `;
+        groupList.appendChild(item);
+      });
+
+      // Reaplica listeners
+      document.querySelectorAll(".group-check").forEach(chk => {
+        chk.addEventListener("change", checkSelection);
+      });
+
+    } catch (err) {
+      groupList.innerHTML = `<div class="alert alert-danger text-center">❌ ${err.message}</div>`;
+    }
+  }
+
+  // 🔍 Filtro de grupos (nome)
   search.addEventListener("input", () => {
     const term = search.value.toLowerCase().trim();
     document.querySelectorAll("#group-list .list-group-item").forEach(item => {
       const name = (item.querySelector(".group-name")?.textContent || "").toLowerCase().trim();
-      if (name.includes(term)) {
-        item.classList.remove("d-none");  // mostra
-      } else {
-        item.classList.add("d-none");     // esconde
-      }
+      item.classList.toggle("d-none", !name.includes(term));
     });
   });
 
@@ -105,10 +130,6 @@
     const selected = document.querySelectorAll(".group-check:checked");
     toggleAllBtn.disabled = (selected.length !== 1);
   }
-
-  document.querySelectorAll(".group-check").forEach(chk => {
-    chk.addEventListener("change", checkSelection);
-  });
 
   // Toggle marcar todos
   toggleAllBtn.addEventListener("click", () => {
@@ -128,12 +149,14 @@
       return;
     }
 
-    // Desabilita botão para evitar duplo clique
     const submitBtn = e.target.querySelector("button[type='submit']");
     if (submitBtn) {
       submitBtn.disabled = true;
       submitBtn.innerText = "⏳ Enviando...";
     }
   });
+
+  // 🚀 Carregar grupos ao abrir página
+  carregarGrupos();
 </script>
 {% endblock %}
