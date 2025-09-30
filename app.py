@@ -300,7 +300,7 @@ def grupos():
 
     grupos = []
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, headers=headers, timeout=300)
         resp.raise_for_status()
         grupos = resp.json() or []
     except Exception as e:
